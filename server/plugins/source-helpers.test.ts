@@ -122,3 +122,85 @@ describe('_source-helpers kuwoUrl', () => {
     await expect(helpers.kuwoUrl('228908', 'standard')).resolves.toBe('http://kw-er.kuwo.cn/song.mp3');
   });
 });
+
+describe('_source-helpers resolveMedia preference', () => {
+  beforeEach(() => {
+    delete process.env.QQ_MUSIC_COOKIE;
+    delete process.env.QQ_MUSIC_UIN;
+    delete process.env.NETEASE_COOKIE;
+    delete process.env.KUGOU_COOKIE;
+  });
+
+  afterEach(() => {
+    delete process.env.QQ_MUSIC_COOKIE;
+    delete process.env.QQ_MUSIC_UIN;
+    delete process.env.NETEASE_COOKIE;
+    delete process.env.KUGOU_COOKIE;
+  });
+
+  it('prioritizes direct resolution when platform credentials are set', async () => {
+    process.env.QQ_MUSIC_COOKIE = 'uin=123456; qm_keyst=abcdef';
+    const helpers = await loadHelpers();
+    const directMock = vi.fn().mockResolvedValue('https://ws.stream.qqmusic.qq.com/vip-stream.flac');
+
+    const result = await helpers.resolveMedia({
+      lxSource: 'tx',
+      lxId: '003testmid',
+      quality: 'flac',
+      refresh: true,
+      direct: directMock,
+    });
+
+    expect(directMock).toHaveBeenCalled();
+    expect(result.url).toBe('https://ws.stream.qqmusic.qq.com/vip-stream.flac');
+  });
+});
+
+describe('_source-helpers neteaseUrl', () => {
+  beforeEach(() => {
+    requests.length = 0;
+    installXhrStub();
+  });
+
+  afterEach(() => {
+    (globalThis as unknown as { XMLHttpRequest: unknown }).XMLHttpRequest = originalXHR;
+  });
+
+  it('rejects audition / free trial snippet', async () => {
+    const helpers = await loadHelpers();
+    respondWith = () => ({
+      code: 200,
+      data: [
+        {
+          id: 12345,
+          code: 200,
+          fee: 1,
+          time: 30000,
+          freeTrialInfo: { start: 0, end: 30 },
+          url: 'http://m802.music.126.net/trial.mp3',
+        },
+      ],
+    });
+
+    await expect(helpers.neteaseUrl('12345', 'standard')).resolves.toBeNull();
+  });
+
+  it('accepts full track with valid url', async () => {
+    const helpers = await loadHelpers();
+    respondWith = () => ({
+      code: 200,
+      data: [
+        {
+          id: 12345,
+          code: 200,
+          fee: 0,
+          time: 240000,
+          url: 'http://m802.music.126.net/full.mp3',
+        },
+      ],
+    });
+
+    await expect(helpers.neteaseUrl('12345', 'standard')).resolves.toBe('http://m802.music.126.net/full.mp3');
+  });
+});
+

@@ -547,10 +547,23 @@ export function setupRoutes(app: Express) {
         res.set('Content-Range', response.headers.get('content-range') as string);
       }
       
-      // Do NOT forward Content-Length from upstream — the proxied body may be
-      // decoded (e.g. gzip decompressed) by Node's fetch, so the upstream
-      // Content-Length would be wrong and cause ERR_CONTENT_LENGTH_MISMATCH.
-      // Let Node/Express use Transfer-Encoding: chunked instead.
+      // Forward Content-Length for binary/uncompressed streams, or compute it from Content-Range for 206 responses.
+      // Browsers (Chrome/Safari) require Content-Length on 206 Partial Content to cleanly detect EOF and fire 'ended'.
+      const contentEncoding = response.headers.get('content-encoding');
+      const isCompressed = contentEncoding && contentEncoding !== 'identity';
+      const upstreamContentLength = response.headers.get('content-length');
+
+      if (!isCompressed && upstreamContentLength) {
+        res.set('Content-Length', upstreamContentLength);
+      } else if (!isCompressed && response.status === 206) {
+        const cr = response.headers.get('content-range');
+        const match = cr?.match(/bytes\s+(\d+)-(\d+)\/(\d+|\*)/);
+        if (match) {
+          const start = parseInt(match[1], 10);
+          const end = parseInt(match[2], 10);
+          res.set('Content-Length', String(end - start + 1));
+        }
+      }
 
       if (!response.body) {
         res.end();

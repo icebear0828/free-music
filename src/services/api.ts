@@ -307,7 +307,9 @@ class ApiServer {
         headers: this.getAuthHeaders()
       });
       if (!res.ok) {
-        localStorage.removeItem('auth_token'); // Clear invalid token
+        if (res.status === 401 || res.status === 403) {
+          localStorage.removeItem('auth_token'); // Clear invalid token only on unauthorized
+        }
         return null;
       }
       const data = await res.json();

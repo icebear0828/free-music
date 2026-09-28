@@ -152,5 +152,113 @@ describe('PlayerProvider race condition prevention', () => {
 
     expect(api.getMediaUrl).toHaveBeenCalledTimes(1); // Still 1!
   });
+
+  it('auto-advances to next track when time reaches near end of song', async () => {
+    vi.mocked(api.getMediaUrl).mockImplementation((song) => Promise.resolve(`https://example.com/${song.id}.mp3`));
+
+    const songA = { id: 'a', title: 'Song A', artist: 'Artist A', duration: 100, source: 'test' };
+    const songB = { id: 'b', title: 'Song B', artist: 'Artist B', duration: 100, source: 'test' };
+
+    function PlaylistConsumer() {
+      const { currentSong, playSong, audioRef, handleTimeUpdate } = usePlayer();
+      return (
+        <div>
+          <div data-testid="song-title">{currentSong?.title ?? 'none'}</div>
+          <button
+            data-testid="start-playlist"
+            onClick={() => playSong(songA, [songA, songB], 0)}
+          >
+            Start
+          </button>
+          <button
+            data-testid="simulate-near-end"
+            onClick={() => {
+              if (audioRef.current) {
+                Object.defineProperty(audioRef.current, 'currentTime', { value: 99.8, configurable: true, writable: true });
+                Object.defineProperty(audioRef.current, 'duration', { value: 100, configurable: true, writable: true });
+                handleTimeUpdate();
+              }
+            }}
+          >
+            Near End
+          </button>
+        </div>
+      );
+    }
+
+    render(
+      <PlayerProvider>
+        <PlaylistConsumer />
+      </PlayerProvider>
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('start-playlist'));
+    });
+    expect(screen.getByTestId('song-title')).toHaveTextContent('Song A');
+
+    // Simulate reaching near the end (99.8s / 100s)
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('simulate-near-end'));
+    });
+
+    // Should have auto-advanced to Song B
+    expect(screen.getByTestId('song-title')).toHaveTextContent('Song B');
+  });
+
+  it('auto-advances to next track when browser auto-pauses near end without user action', async () => {
+    vi.mocked(api.getMediaUrl).mockImplementation((song) => Promise.resolve(`https://example.com/${song.id}.mp3`));
+
+    const songA = { id: 'a', title: 'Song A', artist: 'Artist A', duration: 200, source: 'test' };
+    const songB = { id: 'b', title: 'Song B', artist: 'Artist B', duration: 200, source: 'test' };
+
+    function PauseConsumer() {
+      const { currentSong, playSong, audioRef } = usePlayer();
+      return (
+        <div>
+          <div data-testid="song-title">{currentSong?.title ?? 'none'}</div>
+          <button
+            data-testid="start-playlist"
+            onClick={() => playSong(songA, [songA, songB], 0)}
+          >
+            Start
+          </button>
+          <button
+            data-testid="simulate-browser-pause"
+            onClick={() => {
+              if (audioRef.current) {
+                // Simulate audio element reaching 195s out of 200s (5s remaining)
+                Object.defineProperty(audioRef.current, 'currentTime', { value: 195, configurable: true, writable: true });
+                Object.defineProperty(audioRef.current, 'duration', { value: 200, configurable: true, writable: true });
+                // Trigger pause event from the element (not user togglePlay)
+                fireEvent.pause(audioRef.current);
+              }
+            }}
+          >
+            Browser Pause
+          </button>
+        </div>
+      );
+    }
+
+    render(
+      <PlayerProvider>
+        <PauseConsumer />
+      </PlayerProvider>
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('start-playlist'));
+    });
+    expect(screen.getByTestId('song-title')).toHaveTextContent('Song A');
+
+    // Simulate browser decoder running out of frames and firing pause at 195s / 200s
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('simulate-browser-pause'));
+    });
+
+    // Should have auto-advanced to Song B
+    expect(screen.getByTestId('song-title')).toHaveTextContent('Song B');
+  });
 });
 

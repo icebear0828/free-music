@@ -52,7 +52,7 @@ export function loadPluginModule(filePath: string, cache = new Map<string, unkno
  * Bump whenever the bundled plugin sources change, so an existing install
  * replaces its cached copies instead of keeping stale ones forever.
  */
-const PLUGIN_BUNDLE_VERSION = '3';
+const PLUGIN_BUNDLE_VERSION = '6';
 const BUNDLE_STAMP_FILE = '.bundle-version';
 const SHARED_PLUGIN_FILES = ['_source-helpers.cjs'];
 

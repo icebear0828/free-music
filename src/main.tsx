@@ -15,6 +15,11 @@ createRoot(document.getElementById('root')!).render(
 // stale cache would only get in the way of updates.
 if (!isNative && 'serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => undefined);
+    navigator.serviceWorker.register('/sw.js').then((registration) => {
+      registration.update();
+      if (registration.waiting) {
+        registration.waiting.postMessage('SKIP_WAITING');
+      }
+    }).catch(() => undefined);
   });
 }

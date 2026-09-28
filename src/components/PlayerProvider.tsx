@@ -58,6 +58,10 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const playRequestIdRef = useRef(0);
   const consecutiveFailuresRef = useRef(0);
 
+  const lastProgressRef = useRef<{ time: number; timestamp: number }>({ time: 0, timestamp: Date.now() });
+  const isEndingRef = useRef(false);
+  const userPausedRef = useRef(false);
+
   // Refs to ensure event handlers always read the latest state
   const playlistRef = useRef<Song[]>(playlist);
   const currentIndexRef = useRef(currentIndex);
@@ -72,14 +76,27 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
   const handleTimeUpdate = () => {
     if (audioRef.current) {
-      setCurrentTime(audioRef.current.currentTime);
-      setDuration(audioRef.current.duration);
+      const cur = audioRef.current.currentTime;
+      const dur = audioRef.current.duration;
+      setCurrentTime(cur);
+      setDuration(dur);
+
+      if (Math.abs(cur - lastProgressRef.current.time) > 0.1) {
+        lastProgressRef.current = { time: cur, timestamp: Date.now() };
+      }
+
+      // If within 0.3s of track end, trigger handleEnded directly to prevent trailing silence stall
+      if (dur > 0 && cur >= dur - 0.3 && !isEndingRef.current) {
+        handleEnded();
+      }
     }
   };
 
   const handleSeek = (percent: number) => {
     if (!audioRef.current || !duration) return;
     const newTime = percent * duration;
+    isEndingRef.current = false;
+    lastProgressRef.current = { time: newTime, timestamp: Date.now() };
     audioRef.current.currentTime = newTime;
     setCurrentTime(newTime);
   };
@@ -98,6 +115,10 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     if (audioRef.current) {
       audioRef.current.pause();
     }
+
+    isEndingRef.current = false;
+    userPausedRef.current = false;
+    lastProgressRef.current = { time: 0, timestamp: Date.now() };
 
     setCurrentSong(song);
     setIsPlaying(false); // Pause while loading
@@ -312,6 +333,9 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
   // handleEnded: reads from refs to always have the latest state
   const handleEnded = () => {
+    if (isEndingRef.current) return;
+    isEndingRef.current = true;
+
     const pl = playlistRef.current;
     const idx = currentIndexRef.current;
     const mode = repeatModeRef.current;
@@ -319,7 +343,11 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     if (mode === 'one') {
       if (audioRef.current) {
         audioRef.current.currentTime = 0;
-        audioRef.current.play().then(() => setIsPlaying(true)).catch(console.error);
+        audioRef.current.play().then(() => {
+          setIsPlaying(true);
+          isEndingRef.current = false;
+          lastProgressRef.current = { time: 0, timestamp: Date.now() };
+        }).catch(console.error);
       }
       return;
     }
@@ -379,8 +407,10 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const togglePlay = () => {
     if (!currentSong || !audioRef.current) return;
     if (isPlaying) {
+      userPausedRef.current = true;
       audioRef.current.pause();
     } else {
+      userPausedRef.current = false;
       audioRef.current.play().catch(console.error);
     }
     setIsPlaying(!isPlaying);
@@ -445,8 +475,15 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
     const handlers: [MediaSessionAction, MediaSessionActionHandler][] = [
-      ['play', () => audioRef.current?.play().then(() => setIsPlaying(true)).catch(() => undefined)],
-      ['pause', () => { audioRef.current?.pause(); setIsPlaying(false); }],
+      ['play', () => {
+        userPausedRef.current = false;
+        return audioRef.current?.play().then(() => setIsPlaying(true)).catch(() => undefined);
+      }],
+      ['pause', () => {
+        userPausedRef.current = true;
+        audioRef.current?.pause();
+        setIsPlaying(false);
+      }],
       ['previoustrack', () => playPrev()],
       ['nexttrack', () => playNext()],
       ['seekto', (details) => {
@@ -500,6 +537,29 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [togglePlay, playNext, playPrev]);
 
+  // Stall / Near-End Watchdog:
+  // Tracks frequently have 3 to 10 seconds of trailing silence / outro padding.
+  // If playback stalls near the end (remaining <= 10s or 5% of track) for >= 2.5 seconds
+  // while isPlaying is true, automatically advance to the next song.
+  useEffect(() => {
+    if (!isPlaying) return;
+
+    const interval = setInterval(() => {
+      if (!audioRef.current || isEndingRef.current) return;
+      const cur = audioRef.current.currentTime;
+      const dur = audioRef.current.duration;
+      if (!dur || dur < 15) return;
+
+      const stallThreshold = Math.max(8, Math.min(12, dur * 0.05));
+      if (dur - cur <= stallThreshold && Date.now() - lastProgressRef.current.timestamp >= 2500) {
+        console.warn(`[Player] Playback stalled near end (${cur.toFixed(1)}s / ${dur.toFixed(1)}s), auto-advancing...`);
+        handleEnded();
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [isPlaying]);
+
   const value = {
     currentSong,
     isPlaying,
@@ -538,9 +598,42 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         ref={audioRef}
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleTimeUpdate}
-        onPlay={() => setIsPlaying(true)}
-        onPause={() => setIsPlaying(false)}
+        onPlay={() => {
+          userPausedRef.current = false;
+          setIsPlaying(true);
+          lastProgressRef.current = {
+            time: audioRef.current?.currentTime || 0,
+            timestamp: Date.now(),
+          };
+        }}
+        onPause={() => {
+          setIsPlaying(false);
+          if (!userPausedRef.current && audioRef.current && !isEndingRef.current) {
+            const cur = audioRef.current.currentTime;
+            const dur = audioRef.current.duration;
+            if (dur > 15 && dur - cur <= 10) {
+              console.warn(`[Player] Track auto-paused near end (${cur.toFixed(1)}s / ${dur.toFixed(1)}s), auto-advancing`);
+              handleEnded();
+            }
+          }
+        }}
         onEnded={handleEnded}
+        onWaiting={() => {
+          if (!audioRef.current || isEndingRef.current) return;
+          const cur = audioRef.current.currentTime;
+          const dur = audioRef.current.duration;
+          if (dur > 15 && dur - cur <= 8 && Date.now() - lastProgressRef.current.timestamp >= 1500) {
+            handleEnded();
+          }
+        }}
+        onStalled={() => {
+          if (!audioRef.current || isEndingRef.current) return;
+          const cur = audioRef.current.currentTime;
+          const dur = audioRef.current.duration;
+          if (dur > 15 && dur - cur <= 8 && Date.now() - lastProgressRef.current.timestamp >= 1500) {
+            handleEnded();
+          }
+        }}
       />
       {children}
     </PlayerContext.Provider>

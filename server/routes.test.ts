@@ -522,7 +522,7 @@ describe('Caching in /api/play, /api/lyric, and /api/proxy', () => {
 
   it('caches audio stream on disk in /api/proxy and serves subsequent requests from disk cache', async () => {
     const testAudioData = Buffer.from('RIFF....WAVEfmt ....data....');
-    const audioUrl = 'https://cdn.example.com/stream-cached-test.mp3';
+    const audioUrl = `https://cdn.example.com/stream-cached-test-${Date.now()}-${Math.random()}.mp3`;
 
     // Mock first upstream fetch response
     const { Readable } = await import('stream');

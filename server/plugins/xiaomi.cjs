@@ -301,7 +301,7 @@ async function getMusicSheetInfo(sheet, page) {
     return {
         isEnd,
         musicList: res.items
-            .filter((item) => { var _a; return ((_a = item === null || item === void 0 ? void 0 : item.fullSong) === null || _a === void 0 ? void 0 : _a.vipFlag) === 0; })
+            .filter((item) => Boolean(item))
             .map((_) => {
                 var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
                 return ({
@@ -387,7 +387,7 @@ async function importMusicSheet(urlLike) {
         withCredentials: true,
     })).data;
     return songs.items
-        .filter((_) => _.vipFlag === 0)
+        .filter(Boolean)
         .map((_) => {
             var _a, _b, _c, _d, _e, _f;
             return ({
@@ -581,12 +581,12 @@ async function getRecommendSheetsByTag(sheetItem, page) {
     };
 }
 async function getMediaSourceByMTM(musicItem, quality) {
-    if (quality === "standard" && musicItem.url) {
+    if (musicItem.url) {
         return {
             url: musicItem.url,
         };
     }
-    else if (quality === "standard") {
+    {
         const headers = {
             Accept: "application/json, text/javascript, */*; q=0.01",
             "Accept-Encoding": "gzip, deflate, br",

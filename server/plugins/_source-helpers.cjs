@@ -21,7 +21,7 @@ const MIN_REQUEST_GAP_MS = 300;
 const URL_CACHE_TTL_MS = 5 * 60 * 1000;
 const DIRECT_URL_CACHE_TTL_MS = 30 * 60 * 1000;
 const NEGATIVE_CACHE_TTL_MS = 60 * 1000;
-const PLACEHOLDER_MIN_DURATION = 20;
+const PLACEHOLDER_MIN_DURATION = 45;
 
 const isTestEnv = () =>
   process.env.NODE_ENV === "test" ||
@@ -103,6 +103,7 @@ function usableLxUrl(body) {
   // panspace links are the API's "no real source" placeholder.
   if (body.url.includes("panspace.kuwo.cn")) return null;
   if (body.msg && body.msg !== "success") return null;
+  if (body.isTrial || body.trial || (typeof body.msg === "string" && body.msg.includes("试听"))) return null;
   return body.url;
 }
 
@@ -231,6 +232,19 @@ async function neteaseUrl(id, quality) {
   );
   const entry = res.data && Array.isArray(res.data.data) ? res.data.data[0] : null;
   if (entry && entry.code === 200 && typeof entry.url === "string" && entry.url.startsWith("http")) {
+    // Filter out trial / audition snippets:
+    // - freeTrialInfo: NetEase marks fragment audition with freeTrialInfo object
+    // - freeTrialPrivilege: resConsumable flag for audition
+    // - freeTimeTrialPrivilege: trial privilege flag
+    // - Short duration (typically 30s-45s) for fee-based tracks
+    if (
+      entry.freeTrialInfo ||
+      (entry.freeTrialPrivilege && entry.freeTrialPrivilege.resConsumable) ||
+      (entry.freeTimeTrialPrivilege && entry.freeTimeTrialPrivilege.type !== 0) ||
+      (Number(entry.time) > 0 && Number(entry.time) <= 60000 && entry.fee !== 0)
+    ) {
+      return null;
+    }
     return entry.url;
   }
   return null;
@@ -245,7 +259,17 @@ const QQ_FILE_PREFIX = {
   wav: ["F000", ".flac"],
 };
 
+function extractQqUin() {
+  if (process.env.QQ_MUSIC_UIN) return process.env.QQ_MUSIC_UIN;
+  if (process.env.QQ_MUSIC_COOKIE) {
+    const match = process.env.QQ_MUSIC_COOKIE.match(/(?:^|;\s*)uin=o?(\d+)/);
+    if (match && match[1]) return match[1];
+  }
+  return "0";
+}
+
 async function qqVkeyRequest(songmid, filename, guid) {
+  const uin = extractQqUin();
   const payload = {
     req_0: {
       module: "vkey.GetVkeyServer",
@@ -254,13 +278,13 @@ async function qqVkeyRequest(songmid, filename, guid) {
         guid,
         songmid: [songmid],
         songtype: [0],
-        uin: process.env.QQ_MUSIC_UIN || "0",
-        loginflag: 1,
+        uin,
+        loginflag: uin !== "0" ? 1 : 0,
         platform: "20",
       },
     },
     comm: {
-      uin: Number(process.env.QQ_MUSIC_UIN || 0),
+      uin: Number(uin) || 0,
       format: "json",
       ct: 24,
       cv: 0,
@@ -291,18 +315,40 @@ async function qqUrl(songmid, quality) {
   if (!songmid) return null;
   const guid = String(Math.floor(Math.random() * 9e9) + 1e9);
 
+  const isTrial = (info) => {
+    if (!info || !info.purl) return true;
+    const purl = info.purl;
+    const filename = info.filename || "";
+    return purl.includes("RS01") || purl.includes("RS02") || filename.startsWith("RS");
+  };
+
+  const [prefix, ext] = QQ_FILE_PREFIX[quality] || QQ_FILE_PREFIX.standard;
   const probe = await qqVkeyRequest(songmid, null, guid);
-  if (!probe) return null;
-  if (probe.info.purl) {
+  if (probe && probe.info && probe.info.purl && !isTrial(probe.info)) {
     // Upgrade to the requested quality when the media mid is known.
-    const [prefix, ext] = QQ_FILE_PREFIX[quality] || QQ_FILE_PREFIX.standard;
     const mediaMid = probe.info.filename ? probe.info.filename.slice(4).replace(/\.[^.]+$/, "") : null;
     if (mediaMid && !probe.info.purl.startsWith(prefix)) {
       const upgraded = await qqVkeyRequest(songmid, `${prefix}${mediaMid}${ext}`, guid);
-      if (upgraded && upgraded.info.purl) return `${upgraded.host}${upgraded.info.purl}`;
+      if (upgraded && upgraded.info && upgraded.info.purl && !isTrial(upgraded.info)) {
+        return `${upgraded.host}${upgraded.info.purl}`;
+      }
     }
     return `${probe.host}${probe.info.purl}`;
   }
+
+  // When probe.info.purl is empty or trial, try direct vkey request with filename for requested quality, standard, or low.
+  const candidates = [
+    QQ_FILE_PREFIX[quality] || QQ_FILE_PREFIX.standard,
+    QQ_FILE_PREFIX.standard,
+    QQ_FILE_PREFIX.low,
+  ];
+  for (const [pfx, extension] of candidates) {
+    const directReq = await qqVkeyRequest(songmid, `${pfx}${songmid}${extension}`, guid);
+    if (directReq && directReq.info && directReq.info.purl && !isTrial(directReq.info)) {
+      return `${directReq.host}${directReq.info.purl}`;
+    }
+  }
+
   return null;
 }
 
@@ -315,26 +361,42 @@ const KUWO_BITRATES = {
   wav: "2000kflac",
 };
 
+const KUWO_SOURCES = [
+  "kwplayerhd_ar_4.3.0.8_tianbao_T1A_qirui.apk",
+  "kwplayercar_ar_6.0.0.9_B_jiakong_vh.apk",
+  "kwplayer_ar_5.1.0.0_B_jiakong_vh.apk",
+];
+
 async function kuwoUrl(rid, quality) {
   if (!rid) return null;
-  const res = await axios.get("https://nmobi.kuwo.cn/mobi.s", {
-    params: {
-      f: "web",
-      source: "kwplayer_ar_5.1.0.0_B_jiakong_vh.apk",
-      type: "convert_url_with_sign",
-      br: KUWO_BITRATES[quality] || KUWO_BITRATES.standard,
-      rid,
-    },
-    headers: { "User-Agent": "okhttp/3.10.0" },
-    timeout: 6000,
-  });
-  const data = res.data && res.data.data;
-  if (!data || typeof data.url !== "string" || !data.url.startsWith("http")) return null;
-  // Kuwo answers copyright-blocked requests with an ~11s "not available" clip
-  // under a completely different rid. Reject it instead of playing noise.
-  if (String(data.rid) !== String(rid)) return null;
-  if (Number(data.duration) > 0 && Number(data.duration) < PLACEHOLDER_MIN_DURATION) return null;
-  return data.url;
+  const br = KUWO_BITRATES[quality] || KUWO_BITRATES.standard;
+  for (const source of KUWO_SOURCES) {
+    try {
+      const res = await axios.get("https://nmobi.kuwo.cn/mobi.s", {
+        params: {
+          f: "web",
+          user: "0",
+          source,
+          type: "convert_url_with_sign",
+          br,
+          rid,
+        },
+        headers: { "User-Agent": "okhttp/3.10.0" },
+        timeout: 5000,
+      });
+      const data = res.data && res.data.data;
+      if (!data || typeof data.url !== "string" || !data.url.startsWith("http")) continue;
+      // Kuwo answers copyright-blocked requests with an ~11s "not available" clip
+      // under a completely different rid. Reject it instead of playing noise.
+      if (String(data.rid) !== String(rid)) continue;
+      if (Number(data.duration) > 0 && Number(data.duration) < PLACEHOLDER_MIN_DURATION) continue;
+      return data.url;
+    } catch (err) {
+      if (isTestEnv()) throw err;
+      // Fall through to next source candidate
+    }
+  }
+  return null;
 }
 
 const KUGOU_SIGN_KEY = "NVPh5oo715z5DIWAeQlhMDsWXXQV4hwt";
@@ -376,13 +438,30 @@ async function kugouUrl(albumAudioId) {
   });
   const data = res.data && res.data.data;
   if (!data) return null;
+  // Reject trial audio:
+  if (data.is_free_part === 1 || data.is_free_part === true || data.free_part === 1) return null;
+  if (data.time_length && Number(data.time_length) > 0 && Number(data.time_length) <= 60 && data.privilege === 10) return null;
   const candidates = [data.play_url, ...(Array.isArray(data.backupdownurl) ? data.backupdownurl : [])];
   const url = candidates.find((u) => typeof u === "string" && u.startsWith("http"));
   return url || null;
 }
 
+function hasPlatformCredential(lxSource) {
+  switch (lxSource) {
+    case "wy":
+      return Boolean(process.env.NETEASE_COOKIE);
+    case "tx":
+      return Boolean(process.env.QQ_MUSIC_COOKIE || process.env.QQ_MUSIC_UIN);
+    case "kg":
+      return Boolean(process.env.KUGOU_COOKIE || process.env.KUGOU_TOKEN);
+    default:
+      return false;
+  }
+}
+
 /**
- * Try the lx-music API first, then the platform's own API.
+ * Try the user's direct platform credentials first if configured,
+ * otherwise try lx-music API first, then direct platform API as fallback.
  * Throws the standard "无法获取播放链接" error when nothing works, so callers
  * (and the cross-source fallback in routes.ts) keep their existing behaviour.
  */
@@ -396,6 +475,22 @@ async function resolveMedia({ lxSource, lxId, quality, refresh, direct }) {
     urlCache.delete(directCacheKey);
   }
 
+  const preferDirect = hasPlatformCredential(lxSource);
+
+  if (preferDirect && typeof direct === "function") {
+    try {
+      const directUrl = await direct();
+      if (directUrl) {
+        if (!isTestEnv()) {
+          cacheSet(directUrlCache, directCacheKey, directUrl, DIRECT_URL_CACHE_TTL_MS);
+        }
+        return { url: directUrl };
+      }
+    } catch (err) {
+      // Fall through to lxUrl
+    }
+  }
+
   const url = await lxUrl(lxSource, lxId, quality, refresh);
   if (url) {
     if (!isTestEnv()) {
@@ -404,7 +499,7 @@ async function resolveMedia({ lxSource, lxId, quality, refresh, direct }) {
     return { url };
   }
 
-  if (!isTestEnv() && typeof direct === "function") {
+  if (!preferDirect && !isTestEnv() && typeof direct === "function") {
     try {
       const directUrl = await direct();
       if (directUrl) {
