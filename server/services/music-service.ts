@@ -36,7 +36,7 @@ export class MusicService {
           return {
             sourceId: id,
             platform: plugin.platform || id,
-            data: dataResult.data || dataResult.isEnd || res || []
+            data: Array.isArray(dataResult.data) ? dataResult.data : []
           };
         } catch (e) {
           logger.warn(`Search failed on plugin ${id}:`, e);

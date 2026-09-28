@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:padding="8dp">
+
+    <LinearLayout
+        android:id="@+id/lyrics_container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp"
+        android:clickable="true"
+        android:focusable="false">
+
+        <TextView
+            android:id="@+id/lyrics_meta"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:textSize="11sp"
+            android:alpha="0.6"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:id="@+id/lyrics_toolbar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp"
+            android:visibility="gone">
+
+            <ImageButton
+                android:id="@+id/lyrics_prev"
+                android:layout_width="36dp"
+                android:layout_height="32dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:src="@android:drawable/ic_media_previous"
+                android:contentDescription="上一首" />
+
+            <ImageButton
+                android:id="@+id/lyrics_play"
+                android:layout_width="36dp"
+                android:layout_height="32dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:src="@android:drawable/ic_media_play"
+                android:contentDescription="播放或暂停" />
+
+            <ImageButton
+                android:id="@+id/lyrics_next_btn"
+                android:layout_width="36dp"
+                android:layout_height="32dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:src="@android:drawable/ic_media_next"
+                android:contentDescription="下一首" />
+
+            <ImageButton
+                android:id="@+id/lyrics_lock"
+                android:layout_width="36dp"
+                android:layout_height="32dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:src="@android:drawable/ic_lock_lock"
+                android:contentDescription="锁定" />
+
+            <ImageButton
+                android:id="@+id/lyrics_close"
+                android:layout_width="36dp"
+                android:layout_height="32dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:src="@android:drawable/ic_menu_close_clear_cancel"
+                android:contentDescription="关闭" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/lyrics_line"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:textSize="28sp"
+            android:textStyle="bold"
+            android:maxLines="2"
+            android:ellipsize="end"
+            android:shadowColor="#B3000000"
+            android:shadowDx="0"
+            android:shadowDy="2"
+            android:shadowRadius="6"
+            android:textColor="#FF4EA1FF" />
+
+        <TextView
+            android:id="@+id/lyrics_translation"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:textSize="17sp"
+            android:maxLines="2"
+            android:ellipsize="end"
+            android:paddingTop="3dp"
+            android:shadowColor="#B3000000"
+            android:shadowDx="0"
+            android:shadowDy="2"
+            android:shadowRadius="6"
+            android:textColor="#FFFFFFFF"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/lyrics_next"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:textSize="14sp"
+            android:alpha="0.45"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:paddingTop="3dp"
+            android:textColor="#FFFFFFFF"
+            android:visibility="gone" />
+    </LinearLayout>
+</FrameLayout>

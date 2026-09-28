@@ -122,13 +122,13 @@ describe('useDownloads', () => {
 
     // Mock link click inside document.createElement for test runner safety
     const originalCreateElement = document.createElement.bind(document);
-    const createSpy = vi.spyOn(document, 'createElement').mockImplementation((tagName) => {
+    const createSpy = vi.spyOn(document, 'createElement').mockImplementation(((tagName: string) => {
       const el = originalCreateElement(tagName);
       if (tagName === 'a') {
         el.click = vi.fn();
       }
       return el;
-    });
+    }) as typeof document.createElement);
 
     const { result } = renderHook(() => useDownloads());
 

@@ -11,6 +11,7 @@ export interface Song<TRaw = unknown> {
   album: string;
   cover: string;
   url?: string;
+  urlTimestamp?: number;
   duration?: number;
   source: string;
   sourceId?: string;
@@ -22,6 +23,31 @@ export interface LyricLine {
   time: number;
   text: string;
   translation?: string;
+}
+
+export interface AuthUser {
+  username: string;
+  nickname: string;
+  avatar: string;
+}
+
+export interface AuthResponse {
+  success: boolean;
+  user: AuthUser;
+  token?: string;
+  error?: string;
+}
+
+export interface PlayStat {
+  songId: string;
+  sourceId: string;
+  title: string;
+  artist: string;
+  album: string;
+  cover: string;
+  playCount: number;
+  lastPlayedAt: string;
+  raw?: unknown;
 }
 
 export interface ApiSearchResult<TData = unknown> {
@@ -40,7 +66,7 @@ export interface InternalPluginInterface {
   version?: string;
   supportedSearchType?: string[];
   search: (query: string, page: number, type: string) => Promise<{ isEnd: boolean; data: unknown[] }>;
-  getMediaSource: (musicItem: unknown, quality: string) => Promise<{ url?: string; header?: Record<string, string> }>;
+  getMediaSource: (musicItem: any, quality: string, refresh?: boolean) => Promise<{ url?: string; header?: Record<string, string> }>;
   getLyric: (musicItem: unknown) => Promise<{ lyric?: string; tlyric?: string }>;
   [key: string]: unknown;
 }

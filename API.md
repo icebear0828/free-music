@@ -6,6 +6,24 @@
 所有接口均基于 `/api` 路径，建议配合本地环境或代理请求使用。
 例如：`http://localhost:3000/api`
 
+移动端 App 与其他跨域客户端可直接访问：服务端对所有 `/api` 请求返回宽松的 CORS 头，并处理 `OPTIONS` 预检。
+
+---
+
+## 0. 服务探活 `GET /api/health`
+
+供移动端「设置 → 服务器地址」测试连通性使用，也可用于监控。
+
+**返回示例**
+```json
+{
+  "success": true,
+  "app": "music",
+  "plugins": ["xiaoqiu", "xiaowo", "xiaoyun", "xiaogou", "xiaomi"],
+  "time": 1769000000000
+}
+```
+
 ---
 
 ## 1. 跨平台综合搜索获取完整结果 `GET /api/search`
@@ -187,6 +205,43 @@
 - `Content-Length`: 目标文件的总字节长 (可选)。
 
 ---
+
+## 8. 卡拉OK带时间戳歌词直接下载 `GET /api/download/lyric` & `POST /api/download/lyric`
+
+专门为下载标准带时间戳 LRC 格式的歌词文件而设计，适合在卡拉OK、歌词同步滚动等场景下直接下载使用。返回的文件带有 `Content-Disposition` 标头以触发浏览器自动下载。
+
+### A. GET 方式接入
+适合直接在普通的 `<a href="...">` 标签或前端/LLM 分析环境中点击下载。
+
+**请求参数 (Query Parameters):**
+- `sourceId` (string, required): 音源插件ID，如 `xiaoyun`, `xiaoqiu`, `xiaogou`, `xiaowo`, `xiaomi`
+- `musicItem` (string, optional): 经过 URL 编码的、原始 JSON 格式字符串。
+- `id` (string, optional): 快速下载参数，直接传入歌曲 id。
+- `title` (string, optional): 配合 `id` 使用的歌曲标题，用于生成下载文件名。
+- `artist` (string, optional): 配合 `id` 使用的歌手名称，用于生成下载文件名。
+- `filename` (string, optional): 指定下载后的本地文件名 (可选，扩展名自动设为 `.lrc`)。
+
+**请求示例:**
+`GET http://localhost:3000/api/download/lyric?sourceId=xiaoyun&id=123&title=晴天&artist=周杰伦`
+
+### B. POST 方式接入
+专为复杂实体直接集成而设计，支持直接传递歌曲 JSON 对象。
+
+**请求头部:**
+- `Content-Type: application/json`
+
+**请求体参数 (JSON Body):**
+- `sourceId` (string, required): 音源插件ID
+- `musicItem` (object, required): 原始数据实体。
+- `filename` (string, optional): 自定义下载文件名。
+
+**响应头部与输出:**
+- `Content-Type`: `text/plain; charset=utf-8`
+- `Content-Disposition`: `attachment; filename*=UTF-8''[文件名].lrc`
+- 输出内容为带有 `[mm:ss.xx]` 标准时间戳的卡拉OK/播放器 LRC 格式歌词。
+
+---
+
 
 ## 未来扩展: LLM 音乐画像分析
 

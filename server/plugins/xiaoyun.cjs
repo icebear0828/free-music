@@ -3,6 +3,7 @@
         "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const axios_1 = require("axios");
+const sourceHelpers = require("./_source-helpers.cjs");
 const CryptoJs = require("crypto-js");
 const qs = require("qs");
 const bigInt = require("big-integer");
@@ -440,29 +441,30 @@ const qualityLevels = {
     flac: "flac",
     wav: "wav",
 };
-async function getMediaSource(musicItem, quality) {
-    try {
-        const res = (
-            await axios_1.default.get(`https://lxmusicapi.onrender.com/url/wy/${musicItem.id}/${qualityLevels[quality]}`, {
-                headers: {
-                    "X-Request-Key": "share-v3"
-                },
-            })
-        ).data;
-        if (!res || !res.url || (res.msg && res.msg !== "success") || res.url.includes("panspace.kuwo.cn")) {
-            throw new Error(res && res.msg ? res.msg : "无法获取播放链接");
-        }
-        return {
-            url: res.url,
-        };
-    } catch (err) {
-        if (process.env.NODE_ENV === 'test' || typeof globalThis.XMLHttpRequest !== 'undefined') {
-            throw err;
-        }
-        return {
-            url: `https://music.163.com/song/media/outer/url?id=${musicItem.id}.mp3`,
-        };
-    }
+async function getMediaSource(musicItem, quality, refresh = false) {
+    return sourceHelpers.resolveMedia({
+        lxSource: "wy",
+        lxId: musicItem.id,
+        quality: qualityLevels[quality],
+        refresh,
+        direct: async () => {
+            const direct = await sourceHelpers.neteaseUrl(musicItem.id, quality);
+            if (direct) return direct;
+            // NetEase official outer link — works for copyright-free tracks.
+            // HEAD it first: restricted tracks answer with an HTML error page.
+            const outerUrl = `https://music.163.com/song/media/outer/url?id=${musicItem.id}.mp3`;
+            const headRes = await axios_1.default.head(outerUrl, {
+                timeout: 4000,
+                maxRedirects: 5,
+                validateStatus: () => true,
+            });
+            const contentType = headRes.headers["content-type"] || "";
+            if (contentType.includes("audio") || contentType.includes("octet-stream")) {
+                return outerUrl;
+            }
+            return null;
+        },
+    });
 }
 const headers = {
     authority: "music.163.com",

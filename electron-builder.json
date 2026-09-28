@@ -1,0 +1,44 @@
+{
+  "appId": "com.yutao.music",
+  "productName": "Music",
+  "directories": {
+    "output": "release",
+    "buildResources": "resources"
+  },
+  "files": [
+    "dist/**/*",
+    "dist-electron/**/*",
+    "resources/tray*.png",
+    "package.json",
+    "!dist/server.cjs"
+  ],
+  "extraResources": [
+    { "from": "server/plugins", "to": "plugins", "filter": ["*.cjs"] }
+  ],
+  "extraMetadata": {
+    "main": "dist-electron/main.cjs"
+  },
+  "asarUnpack": ["**/*.node"],
+  "mac": {
+    "category": "public.app-category.music",
+    "target": [
+      { "target": "dmg", "arch": ["arm64", "x64"] },
+      { "target": "zip", "arch": ["arm64", "x64"] }
+    ],
+    "hardenedRuntime": true,
+    "entitlements": "resources/entitlements.mac.plist",
+    "entitlementsInherit": "resources/entitlements.mac.plist"
+  },
+  "win": {
+    "target": [{ "target": "nsis", "arch": ["x64"] }]
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "perMachine": false
+  },
+  "linux": {
+    "category": "AudioVideo",
+    "target": ["AppImage", "deb"]
+  }
+}

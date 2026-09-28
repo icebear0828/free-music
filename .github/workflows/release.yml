@@ -1,0 +1,170 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要发布的 tag（例如 v1.0.0）'
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  verify:
+    name: Lint & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run test:run
+
+  desktop:
+    name: Desktop (${{ matrix.label }})
+    needs: verify
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            label: macOS
+            builder: --mac
+            artifacts: 'release/*.dmg,release/*.zip'
+          - os: windows-latest
+            label: Windows
+            builder: --win
+            artifacts: 'release/*.exe'
+          - os: ubuntu-latest
+            label: Linux
+            builder: --linux
+            artifacts: 'release/*.AppImage,release/*.deb'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run build
+      - run: npm run build:electron
+
+      - name: Package installers
+        run: npx electron-builder ${{ matrix.builder }} --publish never
+        env:
+          # No Apple Developer certificate in CI — ship an unsigned build.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Collect installers
+        shell: bash
+        run: |
+          mkdir -p out
+          find release -maxdepth 1 -type f \
+            \( -name '*.dmg' -o -name '*.zip' -o -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' \) \
+            -exec cp {} out/ \;
+          ls -la out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.label }}
+          path: out/*
+          if-no-files-found: error
+
+  android:
+    name: Android APK
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+
+      - run: npm ci
+      - run: npm run build:web
+      - run: npx cap sync android
+
+      - name: Build APK
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Verify APK contains the app classes
+        run: |
+          # Gradle only sees the manifest's class names as strings, so a missing
+          # source file still produces a "successful" APK that crashes on launch.
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          unzip -o -q "$APK" 'classes*.dex' -d /tmp/apkdex
+          for CLASS in \
+            Lcom/yutao/music/MainActivity\; \
+            Lcom/yutao/music/floatinglyrics/FloatingLyricsPlugin\; \
+            Lcom/yutao/music/floatinglyrics/FloatingLyricsService\; ; do
+            if grep -qF "$CLASS" /tmp/apkdex/classes*.dex; then
+              echo "OK   $CLASS"
+            else
+              echo "MISS $CLASS"
+              exit 1
+            fi
+          done
+
+      - name: Rename APK
+        run: |
+          mkdir -p out
+          VERSION=$(node -p "require('./package.json').version")
+          cp android/app/build/outputs/apk/release/app-release.apk "out/Music-${VERSION}-android.apk"
+          ls -la out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: out/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    needs: [desktop, android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Flatten artifacts
+        run: |
+          mkdir -p dist-assets
+          find artifacts -type f -exec cp {} dist-assets/ \;
+          ls -la dist-assets
+
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist-assets/* --clobber
+          else
+            gh release create "$TAG" dist-assets/* \
+              --title "Music $TAG" \
+              --notes-file .github/RELEASE_NOTES.md
+          fi

@@ -3,6 +3,7 @@ import { ChevronDown } from 'lucide-react';
 import { usePlayer } from './PlayerProvider';
 import { getProxiedCoverUrl } from '../services/api';
 import { CoverImage } from './CoverImage';
+import { motion } from 'framer-motion';
 
 export function LyricsView() {
   const { currentSong, isPlaying, currentTime, lyrics, showLyricsView, setShowLyricsView } = usePlayer();
@@ -41,10 +42,16 @@ export function LyricsView() {
     }
   }, [currentLyricIndex, showLyricsView, isAutoScroll]);
 
-  if (!showLyricsView || !currentSong) return null;
+  if (!currentSong) return null;
 
   return (
-    <div className="absolute inset-0 bg-[#F5F5F7]/95 backdrop-blur-3xl z-30 flex flex-col pt-10 animate-in fade-in duration-200">
+    <motion.div
+      initial={{ y: '100%', opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      exit={{ y: '100%', opacity: 0 }}
+      transition={{ type: 'spring', damping: 30, stiffness: 180 }}
+      className="absolute inset-0 bg-[#F5F5F7]/95 backdrop-blur-3xl z-30 flex flex-col pt-10"
+    >
       <div className="flex justify-between items-center px-10 mb-8">
         <button 
           onClick={() => setShowLyricsView(false)}
@@ -116,6 +123,6 @@ export function LyricsView() {
           </div>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }

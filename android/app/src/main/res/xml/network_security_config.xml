@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The app connects to a self-hosted Music server on the local network, which
+  serves plain HTTP on an arbitrary LAN address the user types in. Android's
+  domain-config matches hostnames rather than CIDR ranges, so a blanket
+  cleartext allowance is the only way to support "http://192.168.x.y:15000".
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

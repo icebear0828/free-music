@@ -3,6 +3,7 @@
         "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const axios_1 = require("axios");
+const sourceHelpers = require("./_source-helpers.cjs");
 const cheerio_1 = require("cheerio");
 const CryptoJs = require("crypto-js");
 const he = require("he");
@@ -162,27 +163,14 @@ const qualityLevels = {
     flac: "flac",
     wav: "wav",
 };
-async function getMediaSource(musicItem, quality) {
-    try {
-        const res = (
-            await axios_1.default.get(`https://lxmusicapi.onrender.com/url/kg/${musicItem.id}/${qualityLevels[quality]}`, {
-                headers: {
-                    "X-Request-Key": "share-v3"
-                },
-            })
-        ).data;
-        if (!res || !res.url || (res.msg && res.msg !== "success") || res.url.includes("panspace.kuwo.cn")) {
-            throw new Error(res && res.msg ? res.msg : "无法获取播放链接");
-        }
-        return {
-            url: res.url,
-        };
-    } catch (err) {
-        if (process.env.NODE_ENV === 'test' || typeof globalThis.XMLHttpRequest !== 'undefined') {
-            throw err;
-        }
-        throw err;
-    }
+async function getMediaSource(musicItem, quality, refresh = false) {
+    return sourceHelpers.resolveMedia({
+        lxSource: "kg",
+        lxId: musicItem.id,
+        quality: qualityLevels[quality],
+        refresh,
+        direct: () => sourceHelpers.kugouUrl(musicItem.album_audio_id),
+    });
 }
 async function getTopLists() {
     const lists = (await axios_1.default.get("http://mobilecdnbj.kugou.com/api/v3/rank/list?version=9108&plat=0&showtype=2&parentid=0&apiver=6&area_code=1&withsong=0&with_res_tag=0", {

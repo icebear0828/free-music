@@ -22,6 +22,27 @@ body {
   background-color: var(--color-bg-main);
 }
 
+@keyframes slideUpSheet {
+  from {
+    transform: translateY(16px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Native shells and phones: no rubber-band scroll, no tap flash, no zoom. */
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
 @layer utilities {
   .no-scrollbar::-webkit-scrollbar {
     display: none;

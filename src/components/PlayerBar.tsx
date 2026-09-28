@@ -1,6 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Heart, ChevronDown, Maximize2, ListMusic, X, Trash2, Repeat, Repeat1, FolderPlus } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Heart, ChevronDown, Maximize2, ListMusic, PictureInPicture2, X, Trash2, Repeat, Repeat1, FolderPlus } from 'lucide-react';
 import { usePlayer } from './PlayerProvider';
+import { useFloatingLyrics } from './FloatingLyricsProvider';
+
+const modifierLabel = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform) ? '⌘' : 'Ctrl';
 
 const formatTime = (time: number) => {
   if (!time || isNaN(time)) return "0:00";
@@ -18,9 +21,10 @@ export function PlayerBar({ playlists, toggleInPlaylist, isInPlaylist }: { playl
     currentSong, isPlaying, currentTime, duration, volume,
     togglePlay, playNext, playPrev, setVolume, handleSeek, showLyricsView, setShowLyricsView, audioRef, handleTimeUpdate,
     playlist, currentIndex, removeFromQueue, clearQueue, playSong, playQueueIndex,
-    repeatMode, toggleRepeatMode
+    repeatMode, toggleRepeatMode, handleEnded
   } = usePlayer();
 
+  const floating = useFloatingLyrics();
   const [showQueue, setShowQueue] = useState(false);
   const [showPlaylistsMenu, setShowPlaylistsMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -105,12 +109,6 @@ export function PlayerBar({ playlists, toggleInPlaylist, isInPlaylist }: { playl
         </div>
       )}
       <footer className="h-[80px] bg-white/80 backdrop-blur-xl border-t border-[#EDEDF2] flex items-center justify-between px-8 absolute bottom-0 left-0 right-0 z-50 shrink-0 select-none">
-      <audio 
-        ref={audioRef} 
-        onTimeUpdate={handleTimeUpdate}
-        onLoadedMetadata={handleTimeUpdate}
-      />
-      
       {/* Current Track Info */}
       <div className="flex items-center gap-4 w-1/3 min-w-0">
         {currentSong ? (
@@ -223,7 +221,21 @@ export function PlayerBar({ playlists, toggleInPlaylist, isInPlaylist }: { playl
 
       {/* Right Tools - Volume etc */}
       <div className="flex items-center justify-end gap-3 w-1/3 text-[#6E6E73]">
-        <button 
+        <button
+          className={`hover:text-[#1D1D1F] transition-colors p-2 rounded-full hover:bg-black/5 disabled:opacity-30 disabled:hover:text-[#6E6E73] ${
+            floating.enabled ? 'text-[#0071E3]' : ''
+          }`}
+          onClick={() => void floating.toggle()}
+          disabled={!floating.supported}
+          title={
+            floating.supported
+              ? `${floating.enabled ? '关闭' : '开启'}桌面歌词 (${modifierLabel}+Shift+L)`
+              : floating.unsupportedHint
+          }
+        >
+          <PictureInPicture2 className="w-5 h-5" />
+        </button>
+        <button
           className={`hover:text-[#1D1D1F] transition-colors p-2 rounded-full hover:bg-black/5 ${showQueue ? 'text-[#0071E3]' : ''}`}
           onClick={() => setShowQueue(!showQueue)}
         >

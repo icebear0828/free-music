@@ -1,16 +1,25 @@
 import { useState } from 'react';
-import { Music, Home, Search, Library, Heart, ListMusic, Download, Plus, Trash2, Import, Loader2 } from 'lucide-react';
+import { Music, Home, Search, Library, Heart, ListMusic, Download, Plus, Trash2, Import, Loader2, User } from 'lucide-react';
 import { Settings } from 'lucide-react';
 import { api, getProxiedCoverUrl } from '../services/api';
 
 import { Playlist, Song } from '../types';
+import type { AppUser } from './AppDataProvider';
 
-export function Sidebar({ currentView, setView, playlists, createPlaylist, removePlaylist }: { currentView: string; setView: (v: string) => void; playlists: Playlist[]; createPlaylist: (n: string, initialItems?: Song[]) => void; removePlaylist: (id: string) => void; }) {
+export function Sidebar({ currentView, setView, playlists, createPlaylist, removePlaylist, user }: { currentView: string; setView: (v: string) => void; playlists: Playlist[]; createPlaylist: (n: string, initialItems?: Song[]) => void; removePlaylist: (id: string) => void; user: AppUser | null; }) {
   const [newPlName, setNewPlName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [importLoading, setImportLoading] = useState(false);
-  const [audioQuality, setAudioQuality] = useState(localStorage.getItem('music_audio_quality') || 'standard');
+  // If the user had WAV stored (which causes widespread 500 errors), reset to standard
+  const storedQuality = localStorage.getItem('music_audio_quality') || 'standard';
+  const [audioQuality, setAudioQuality] = useState(() => {
+    if (storedQuality === 'wav') {
+      localStorage.setItem('music_audio_quality', 'standard');
+      return 'standard';
+    }
+    return storedQuality;
+  });
 
   const handleQualityChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value;
@@ -111,6 +120,12 @@ export function Sidebar({ currentView, setView, playlists, createPlaylist, remov
           <div onClick={() => setView('downloads')} className={getLinkClasses('downloads')}>
             <Download className={getIconClasses('downloads')} /> 本地下载
           </div>
+          <div onClick={() => setView('profile')} className={getLinkClasses('profile')}>
+            <User className={getIconClasses('profile')} /> 个人中心
+          </div>
+          <div onClick={() => setView('settings')} className={getLinkClasses('settings')}>
+            <Settings className={getIconClasses('settings')} /> 设置 · 悬浮歌词
+          </div>
         </div>
 
         <div className="space-y-3">
@@ -174,22 +189,53 @@ export function Sidebar({ currentView, setView, playlists, createPlaylist, remov
         </div>
       </nav>
 
-      <div className="mt-auto pt-6 border-t border-[#EDEDF2] flex flex-col gap-2">
-        <label htmlFor="audio-quality-select" className="flex items-center gap-2 text-[#6E6E73] px-1 cursor-pointer hover:text-[#0071E3] transition-colors select-none">
-          <Settings className="w-4 h-4 animate-[spin_8s_linear_infinite]" />
-          <span className="text-[13px] font-[600] uppercase tracking-wider">音质选择</span>
-        </label>
-        <select 
-          id="audio-quality-select"
-          value={audioQuality} 
-          onChange={handleQualityChange}
-          className="w-full bg-white border border-[#D5D5D7] rounded-[8px] px-3 py-2 text-[14px] text-[#1D1D1F] focus:outline-none focus:border-[#0071E3] focus:ring-[3px] focus:ring-[#0071E3]/10 cursor-pointer appearance-none bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiMzMzMzMzYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cG9seWxpbmUgcG9pbnRzPSI2IDkgMTIgMTUgMTggOSI+PC9wb2x5bGluZT48L3N2Zz4=')] bg-no-repeat bg-[position:right_12px_center] bg-[length:16px_16px] pr-8"
-        >
-          <option value="low">标准 (128kbps)</option>
-          <option value="standard">较高 (320kbps)</option>
-          <option value="flac">无损 (FLAC)</option>
-          <option value="wav">原音轨 (WAV)</option>
-        </select>
+      <div className="mt-auto pt-6 border-t border-[#EDEDF2] flex flex-col gap-3">
+        <div className="flex flex-col gap-2">
+          <label htmlFor="audio-quality-select" className="flex items-center gap-2 text-[#6E6E73] px-1 cursor-pointer hover:text-[#0071E3] transition-colors select-none">
+            <Settings className="w-4 h-4 animate-[spin_8s_linear_infinite]" />
+            <span className="text-[13px] font-[600] uppercase tracking-wider">音质选择</span>
+          </label>
+          <select 
+            id="audio-quality-select"
+            value={audioQuality} 
+            onChange={handleQualityChange}
+            className="w-full bg-white border border-[#D5D5D7] rounded-[8px] px-3 py-2 text-[14px] text-[#1D1D1F] focus:outline-none focus:border-[#0071E3] focus:ring-[3px] focus:ring-[#0071E3]/10 cursor-pointer appearance-none bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiMzMzMzMzYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cG9seWxpbmUgcG9pbnRzPSI2IDkgMTIgMTUgMTggOSI+PC9wb2x5bGluZT48L3N2Zz4=')] bg-no-repeat bg-[position:right_12px_center] bg-[length:16px_16px] pr-8"
+          >
+            <option value="low">标准 (128kbps)</option>
+            <option value="standard">较高 (320kbps) — 推荐</option>
+            <option value="high">高品质 (320kbps+)</option>
+            <option value="flac">无损 (FLAC) — 部分歌曲不可用</option>
+            <option value="wav">原音轨 (WAV) — 大部分歌曲不可用⚠️</option>
+          </select>
+        </div>
+
+        <div className="pt-3 border-t border-[#EDEDF2] flex flex-col">
+          {user ? (
+            <div 
+              className="flex items-center gap-3 p-2.5 rounded-[12px] bg-white border border-[#EDEDF2] shadow-sm hover:shadow-md hover:bg-[#F5F5F7] transition-all cursor-pointer overflow-hidden" 
+              onClick={() => setView('profile')}
+              title="查看个人资料"
+            >
+              <img 
+                src={user.avatar} 
+                alt="Avatar" 
+                className="w-9 h-9 rounded-full object-cover border border-black/5 flex-shrink-0" 
+              />
+              <div className="flex flex-col overflow-hidden">
+                <span className="text-[14px] font-[600] text-[#1D1D1F] truncate leading-tight">{user.nickname}</span>
+                <span className="text-[11px] text-[#6E6E73] truncate leading-none mt-1 font-[500]">已登录</span>
+              </div>
+            </div>
+          ) : (
+            <button 
+              onClick={() => setView('profile')}
+              className="w-full flex items-center justify-center gap-2 h-[44px] bg-[#0071E3] hover:bg-[#0051A3] hover:scale-[1.02] active:scale-[0.98] text-white rounded-[12px] text-[14px] font-[600] transition-all shadow-sm"
+            >
+              <User className="w-4 h-4 fill-current" />
+              登录账号
+            </button>
+          )}
+        </div>
       </div>
     </aside>
   );

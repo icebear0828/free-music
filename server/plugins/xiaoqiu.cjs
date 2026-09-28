@@ -3,6 +3,7 @@
         "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const axios_1 = require("axios");
+const sourceHelpers = require("./_source-helpers.cjs");
 const CryptoJs = require("crypto-js");
 const he = require("he");
 const pageSize = 20;
@@ -59,7 +60,7 @@ const searchTypeMap = {
 const headers = {
     referer: "https://y.qq.com",
     "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36",
-    Cookie: "uin=",
+    Cookie: process.env.QQ_MUSIC_COOKIE || "uin=",
 };
 async function searchBase(query, page, type) {
     const res = (await (0, axios_1.default)({
@@ -292,21 +293,61 @@ async function getArtistWorks(artistItem, page, type) {
     }
 }
 async function getLyric(musicItem) {
-    const result = (await (0, axios_1.default)({
-        url: `http://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid=${musicItem.songmid}&pcachetime=${new Date().getTime()}&g_tk=5381&loginUin=0&hostUin=0&inCharset=utf8&outCharset=utf-8&notice=0&platform=yqq&needNewCode=0`,
-        headers: { Referer: "https://y.qq.com", Cookie: "uin=" },
-        method: "get",
-        xsrfCookieName: "XSRF-TOKEN",
-        withCredentials: true,
-    })).data;
-    const res = JSON.parse(result.replace(/callback\(|MusicJsonCallback\(|jsonCallback\(|\)$/g, ""));
-    let translation;
-    console.log("res keys:", Object.keys(res), "trans length:", res.trans?.length);
-    if (res.trans) {
-        translation = he.decode(CryptoJs.enc.Base64.parse(res.trans).toString(CryptoJs.enc.Utf8));
+    let rawLrc, translation;
+
+    try {
+        const payload = {
+            comm: { ct: '19', cv: '1859', uin: '0' },
+            req: {
+                method: 'GetPlayLyricInfo',
+                module: 'music.musichallSong.PlayLyricInfo',
+                param: {
+                    songMID: musicItem.songmid,
+                    trans: 1,
+                    trans_t: 0
+                }
+            }
+        };
+        const resultMsg = (await axios_1.default.post(`https://u.y.qq.com/cgi-bin/musicu.fcg`, payload, {
+            headers: {
+                referer: 'https://y.qq.com',
+                'user-agent': 'Mozilla/5.0'
+            }
+        })).data;
+        
+        if (resultMsg?.req?.data?.lyric) {
+            rawLrc = he.decode(Buffer.from(resultMsg.req.data.lyric, 'base64').toString('utf8'));
+        }
+        if (resultMsg?.req?.data?.trans) {
+            translation = he.decode(Buffer.from(resultMsg.req.data.trans, 'base64').toString('utf8'));
+        }
+    } catch (e) {
+        console.error("musicu getLyric failed", e);
     }
+    
+    // Fallback to legacy API if the above fails to return rawLrc
+    if (!rawLrc) {
+        try {
+            const result = (await (0, axios_1.default)({
+                url: `http://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid=${musicItem.songmid}&pcachetime=${new Date().getTime()}&g_tk=5381&loginUin=0&hostUin=0&inCharset=utf8&outCharset=utf-8&notice=0&platform=yqq&needNewCode=0`,
+                headers: { Referer: "https://y.qq.com", Cookie: process.env.QQ_MUSIC_COOKIE || "uin=" },
+                method: "get",
+                xsrfCookieName: "XSRF-TOKEN",
+            })).data;
+            const res = JSON.parse(result.replace(/callback\(|MusicJsonCallback\(|jsonCallback\(|\)$/g, ""));
+            if (res.trans) {
+                translation = he.decode(CryptoJs.enc.Base64.parse(res.trans).toString(CryptoJs.enc.Utf8));
+            }
+            if (res.lyric) {
+                rawLrc = he.decode(CryptoJs.enc.Base64.parse(res.lyric).toString(CryptoJs.enc.Utf8));
+            }
+        } catch (e) {
+            console.error("Fallback get rawLrc failed", e);
+        }
+    }
+    
     return {
-        rawLrc: he.decode(CryptoJs.enc.Base64.parse(res.lyric).toString(CryptoJs.enc.Utf8)),
+        rawLrc,
         translation,
     };
 }
@@ -327,7 +368,7 @@ async function importMusicSheet(urlLike) {
     }
     const result = (await (0, axios_1.default)({
         url: `http://i.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?type=1&utf8=1&disstid=${id}&loginUin=0`,
-        headers: { Referer: "https://y.qq.com/n/yqq/playlist", Cookie: "uin=" },
+        headers: { Referer: "https://y.qq.com/n/yqq/playlist", Cookie: process.env.QQ_MUSIC_COOKIE || "uin=" },
         method: "get",
         xsrfCookieName: "XSRF-TOKEN",
         withCredentials: true,
@@ -340,7 +381,7 @@ async function getTopLists() {
         url: "https://u.y.qq.com/cgi-bin/musicu.fcg?_=1577086820633&data=%7B%22comm%22%3A%7B%22g_tk%22%3A5381%2C%22uin%22%3A123456%2C%22format%22%3A%22json%22%2C%22inCharset%22%3A%22utf-8%22%2C%22outCharset%22%3A%22utf-8%22%2C%22notice%22%3A0%2C%22platform%22%3A%22h5%22%2C%22needNewCode%22%3A1%2C%22ct%22%3A23%2C%22cv%22%3A0%7D%2C%22topList%22%3A%7B%22module%22%3A%22musicToplist.ToplistInfoServer%22%2C%22method%22%3A%22GetAll%22%2C%22param%22%3A%7B%7D%7D%7D",
         method: "get",
         headers: {
-            Cookie: "uin=",
+            Cookie: process.env.QQ_MUSIC_COOKIE || "uin=",
         },
         xsrfCookieName: "XSRF-TOKEN",
         withCredentials: true,
@@ -362,7 +403,7 @@ async function getTopListDetail(topListItem) {
         url: `https://u.y.qq.com/cgi-bin/musicu.fcg?g_tk=5381&data=%7B%22detail%22%3A%7B%22module%22%3A%22musicToplist.ToplistInfoServer%22%2C%22method%22%3A%22GetDetail%22%2C%22param%22%3A%7B%22topId%22%3A${topListItem.id}%2C%22offset%22%3A0%2C%22num%22%3A100%2C%22period%22%3A%22${(_a = topListItem.period) !== null && _a !== void 0 ? _a : ""}%22%7D%7D%2C%22comm%22%3A%7B%22ct%22%3A24%2C%22cv%22%3A0%7D%7D`,
         method: "get",
         headers: {
-            Cookie: "uin=",
+            Cookie: process.env.QQ_MUSIC_COOKIE || "uin=",
         },
         xsrfCookieName: "XSRF-TOKEN",
         withCredentials: true,
@@ -445,27 +486,14 @@ const qualityLevels = {
     flac: "flac",
     wav: "wav",
 };
-async function getMediaSource(musicItem, quality) {
-    try {
-        const res = (
-            await axios_1.default.get(`https://lxmusicapi.onrender.com/url/tx/${musicItem.songmid}/${qualityLevels[quality]}`, {
-                headers: {
-                    "X-Request-Key": "share-v3"
-                },
-            })
-        ).data;
-        if (!res || !res.url || (res.msg && res.msg !== "success") || res.url.includes("panspace.kuwo.cn")) {
-            throw new Error(res && res.msg ? res.msg : "无法获取播放链接");
-        }
-        return {
-            url: res.url,
-        };
-    } catch (err) {
-        if (process.env.NODE_ENV === 'test' || typeof globalThis.XMLHttpRequest !== 'undefined') {
-            throw err;
-        }
-        throw err;
-    }
+async function getMediaSource(musicItem, quality, refresh = false) {
+    return sourceHelpers.resolveMedia({
+        lxSource: "tx",
+        lxId: musicItem.songmid,
+        quality: qualityLevels[quality],
+        refresh,
+        direct: () => sourceHelpers.qqUrl(musicItem.songmid, quality),
+    });
 }
 module.exports = {
     platform: "小秋音乐",

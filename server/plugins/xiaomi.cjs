@@ -3,6 +3,7 @@
             "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const axios_1 = require("axios");
+const sourceHelpers = require("./_source-helpers.cjs");
 const cheerio_1 = require("cheerio");
 const CryptoJS = require("crypto-js");
 const searchRows = 20;
@@ -300,7 +301,7 @@ async function getMusicSheetInfo(sheet, page) {
     return {
         isEnd,
         musicList: res.items
-            .filter((item) => { var _a; return ((_a = item === null || item === void 0 ? void 0 : item.fullSong) === null || _a === void 0 ? void 0 : _a.vipFlag) === 0; })
+            .filter((item) => Boolean(item))
             .map((_) => {
                 var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
                 return ({
@@ -386,7 +387,7 @@ async function importMusicSheet(urlLike) {
         withCredentials: true,
     })).data;
     return songs.items
-        .filter((_) => _.vipFlag === 0)
+        .filter(Boolean)
         .map((_) => {
             var _a, _b, _c, _d, _e, _f;
             return ({
@@ -580,12 +581,12 @@ async function getRecommendSheetsByTag(sheetItem, page) {
     };
 }
 async function getMediaSourceByMTM(musicItem, quality) {
-    if (quality === "standard" && musicItem.url) {
+    if (musicItem.url) {
         return {
             url: musicItem.url,
         };
     }
-    else if (quality === "standard") {
+    {
         const headers = {
             Accept: "application/json, text/javascript, */*; q=0.01",
             "Accept-Encoding": "gzip, deflate, br",
@@ -606,9 +607,12 @@ async function getMediaSourceByMTM(musicItem, quality) {
                 cpid: musicItem.copyrightId,
             },
         })).data.data;
+        if (!result) throw new Error("Migu API returned no data");
+        const url = result.listenUrl || result.listenQq || result.lisCr || result.mp3;
+        if (!url) throw new Error("Migu API response has no playable URL (API may have changed)");
         return {
-            artwork: musicItem.artwork || result.picL,
-            url: result.listenUrl || result.listenQq || result.lisCr,
+            artwork: musicItem.artwork || result.picL || result.cover,
+            url,
         };
     }
 }
@@ -620,35 +624,17 @@ const qualityLevels = {
     flac: "flac",
     wav: "wav",
 };
-async function getMediaSource(musicItem, quality) {
-    try {
-        const res = (
-            await axios_1.default.get(`https://lxmusicapi.onrender.com/url/mg/${musicItem.id}/${qualityLevels[quality]}`, {
-                headers: {
-                    "X-Request-Key": "share-v3"
-                },
-            })
-        ).data;
-        if (!res || !res.url || (res.msg && res.msg !== "success") || res.url.includes("panspace.kuwo.cn")) {
-            throw new Error(res && res.msg ? res.msg : "无法获取播放链接");
-        }
-        return {
-            url: res.url,
-        };
-    } catch (err) {
-        if (process.env.NODE_ENV === 'test' || typeof globalThis.XMLHttpRequest !== 'undefined') {
-            throw err;
-        }
-        try {
-            const fallback = await getMediaSourceByMTM(musicItem, "standard");
-            if (fallback && fallback.url) {
-                return { url: fallback.url };
-            }
-        } catch (fallbackErr) {
-            console.error("Migu fallback failed:", fallbackErr.message);
-        }
-        throw err;
-    }
+async function getMediaSource(musicItem, quality, refresh = false) {
+    return sourceHelpers.resolveMedia({
+        lxSource: "mg",
+        lxId: musicItem.id,
+        quality: qualityLevels[quality],
+        refresh,
+        direct: async () => {
+            const fallback = await getMediaSourceByMTM(musicItem, quality === "standard" ? "standard" : quality);
+            return (fallback && fallback.url) || null;
+        },
+    });
 }
 module.exports = {
     platform: "小蜜音乐",
